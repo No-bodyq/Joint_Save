@@ -93,3 +93,60 @@ fn test_withdrawal_fee_deduction() {
     assert_eq!(client.total_balance(), 500);
 }
 
+#[test]
+fn test_proportional_yield_distribution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, FlexiblePool);
+    let client = FlexiblePoolClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_address = token_contract.address();
+    let token_client = token::StellarAssetClient::new(&env, &token_address);
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let member_a = Address::generate(&env);
+    let member_b = Address::generate(&env);
+    let member_c = Address::generate(&env);
+
+    let mut members = Vec::new(&env);
+    members.push_back(member_a.clone());
+    members.push_back(member_b.clone());
+    members.push_back(member_c.clone());
+
+    // Minimum deposit = 10, yield_enabled = true
+    client.initialize(
+        &token_address,
+        &members,
+        &10i128,
+        &0u32,
+        &true,
+        &treasury,
+        &0u32,
+    );
+
+    token_client.mint(&member_a, &100i128);
+    token_client.mint(&member_b, &200i128);
+
+    client.deposit(&member_a, &100i128);
+    client.deposit(&member_b, &200i128);
+
+    assert_eq!(client.total_balance(), 300);
+
+    // Distribute yield of 60
+    client.distribute_yield(&admin, &60i128);
+
+    // A gets 20 (total 120)
+    assert_eq!(client.balance_of(&member_a), 120);
+    // B gets 40 (total 240)
+    assert_eq!(client.balance_of(&member_b), 240);
+    // C gets 0 (total 0)
+    assert_eq!(client.balance_of(&member_c), 0);
+
+    assert_eq!(client.total_balance(), 360);
+}
+
+
