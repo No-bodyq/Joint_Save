@@ -175,4 +175,52 @@ fn test_duplicate_deposit_rejection() {
     client.deposit(&member_a);
 }
 
+#[test]
+#[should_panic(expected = "too early")]
+fn test_premature_payout_rejection() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, RotationalPool);
+    let client = RotationalPoolClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_address = token_contract.address();
+    let token_client = token::StellarAssetClient::new(&env, &token_address);
+
+    let treasury = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    let member_a = Address::generate(&env);
+    let member_b = Address::generate(&env);
+
+    let mut members = Vec::new(&env);
+    members.push_back(member_a.clone());
+    members.push_back(member_b.clone());
+
+    client.initialize(
+        &token_address,
+        &members,
+        &100i128,
+        &100u64,
+        &0u32,
+        &0u32,
+        &treasury,
+    );
+
+    token_client.mint(&member_a, &100i128);
+    token_client.mint(&member_b, &100i128);
+
+    client.deposit(&member_a);
+    client.deposit(&member_b);
+
+    // Keep timestamp < next_payout_time (which is init_time + 100)
+    // We set timestamp to 99, which is premature.
+    env.ledger().set_timestamp(99);
+
+    // This should panic because next_payout_time is 100.
+    client.trigger_payout(&relayer);
+}
+
+
 
