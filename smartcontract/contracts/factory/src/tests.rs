@@ -61,3 +61,44 @@ fn test_registration() {
     assert_eq!(client.all_flexible().get(0).unwrap(), pool_id_3);
 }
 
+#[test]
+fn test_set_treasury() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, JointSaveFactory);
+    let client = JointSaveFactoryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token, &treasury);
+
+    let new_treasury = Address::generate(&env);
+    client.set_treasury(&new_treasury);
+    assert_eq!(client.treasury(), new_treasury);
+}
+
+#[test]
+#[should_panic]
+fn test_set_treasury_unauthorized() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, JointSaveFactory);
+    let client = JointSaveFactoryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    // Set state in storage directly
+    env.as_contract(&contract_id, || {
+        let storage = env.storage().persistent();
+        storage.set(&super::DataKey::Admin, &admin);
+        storage.set(&super::DataKey::Treasury, &treasury);
+    });
+
+    let new_treasury = Address::generate(&env);
+    // This should panic because mock_all_auths() is not set and admin did not sign
+    client.set_treasury(&new_treasury);
+}
+
+
