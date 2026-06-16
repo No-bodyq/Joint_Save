@@ -2,7 +2,7 @@
 
 use super::{TargetPool, TargetPoolClient};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
+    testutils::Address as _,
     token, Address, Env, Vec,
 };
 
@@ -54,3 +54,55 @@ fn test_unlock_on_target() {
     assert_eq!(client.total_deposited(), 100);
     assert!(client.is_unlocked());
 }
+
+#[test]
+fn test_proportional_withdraw() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, TargetPool);
+    let client = TargetPoolClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_address = token_contract.address();
+    let token_client = token::StellarAssetClient::new(&env, &token_address);
+    let token_interface_client = token::Client::new(&env, &token_address);
+
+    let admin = Address::generate(&env);
+    let member_a = Address::generate(&env);
+    let member_b = Address::generate(&env);
+
+    let mut members = Vec::new(&env);
+    members.push_back(member_a.clone());
+    members.push_back(member_b.clone());
+
+    client.initialize(
+        &token_address,
+        &admin,
+        &members,
+        &100i128,
+        &1000u32,
+    );
+
+    token_client.mint(&member_a, &100i128);
+    token_client.mint(&member_b, &100i128);
+
+    client.deposit(&member_a, &40i128);
+    client.deposit(&member_b, &60i128);
+
+    assert!(client.is_unlocked());
+
+    // Withdraw A
+    client.withdraw(&member_a);
+    assert_eq!(token_interface_client.balance(&member_a), 100); // 60 remaining + 40 withdrawn = 100
+    assert_eq!(client.balance_of(&member_a), 0);
+
+    // Withdraw B
+    client.withdraw(&member_b);
+    assert_eq!(token_interface_client.balance(&member_b), 100); // 40 remaining + 60 withdrawn = 100
+    assert_eq!(client.balance_of(&member_b), 0);
+
+    assert_eq!(client.total_deposited(), 0);
+}
+
